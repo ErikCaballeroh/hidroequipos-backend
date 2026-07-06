@@ -3,43 +3,45 @@ from datetime import date
 from pydantic import BaseModel, ConfigDict
 
 
-class VentasFiltro(BaseModel):
+class SalesFilter(BaseModel):
+    """Query parameters to filter sales analytics endpoints."""
+
     branch_id: str | None = None
-    fecha_inicio: date | None = None
-    fecha_fin: date | None = None
+    start_date: date | None = None
+    end_date: date | None = None
 
 
-# ---------- 1. Gráfica de líneas: ventas y ganancias diarias ----------
+# ---------- 1. Line chart: daily sales & profit ----------
 
-class VentaDiariaItem(BaseModel):
-    fecha: str  # 'YYYY-MM-DD'
-    total_ventas: float
-    ganancia_total: float
+class DailySaleItem(BaseModel):
+    date: str  # 'YYYY-MM-DD'
+    total_sales: float
+    total_profit: float
 
 
-# ---------- 2. Donut: formas de pago ----------
+# ---------- 2. Donut chart: payment methods ----------
 
-class FormaPagoItem(BaseModel):
-    forma_pago: str
+class PaymentMethodItem(BaseModel):
+    payment_method: str
     total: float
-    numero_tickets: int
+    ticket_count: int
 
 
-# ---------- 3. Tabla: últimos tickets ----------
+# ---------- 3. Table: recent tickets ----------
 
-class TicketRecienteItem(BaseModel):
+class RecentTicketItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     folio: str | None = None
     total: float
-    forma_pago: str
-    vendido_en: str
+    payment_method: str
+    sold_at: str
 
 
-# ---------- 4. Tabla: productos más vendidos ----------
+# ---------- 4. Table: top-selling products ----------
 
-class ProductoMasVendidoItem(BaseModel):
-    producto_codigo: str
-    producto_nombre: str
-    cantidad_vendida: float
-    total_vendido: float
+class TopProductItem(BaseModel):
+    product_code: str
+    product_name: str
+    quantity_sold: float
+    total_sold: float

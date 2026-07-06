@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.exception_handlers import register_generic_exception_handler
 from app.users.exception_handlers import register_user_exception_handlers
+from app.sales.exception_handlers import register_sales_exception_handlers
 from app.users.router import router as users_router
 from app.sales.router import router as sales_router
 
@@ -18,6 +19,7 @@ app.add_middleware(
 )
 
 register_user_exception_handlers(app)
+register_sales_exception_handlers(app)
 register_generic_exception_handler(app)
 
 
@@ -26,5 +28,5 @@ def root():
     return {"status": "ok"}
 
 
-app.include_router(users_router, prefix="/api/v1/users", tags=["usuarios"])
-app.include_router(sales_router, prefix="/api/v1/sales", tags=["ventas"])
+app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
+app.include_router(sales_router, prefix="/api/v1/sales", tags=["sales"])

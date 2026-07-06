@@ -1,4 +1,3 @@
-class RangoFechasInvalidoError(Exception):
-    def __init__(self):
-        super().__init__(
-            "La fecha de inicio no puede ser posterior a la fecha fin")
+class InvalidDateRangeError(Exception):
+    def __init__(self) -> None:
+        super().__init__("Start date cannot be later than end date")

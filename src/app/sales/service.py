@@ -1,178 +1,202 @@
 from datetime import date, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.sales.exceptions import RangoFechasInvalidoError
-from app.sales.models import VentaTicket, VentaTicketArticulo
+from app.sales.exceptions import InvalidDateRangeError
+from app.sales.models import SaleTicket, SaleTicketItem
 from app.sales.schemas import (
-    FormaPagoItem,
-    ProductoMasVendidoItem,
-    TicketRecienteItem,
-    VentaDiariaItem,
-    VentasFiltro,
+    DailySaleItem,
+    PaymentMethodItem,
+    RecentTicketItem,
+    SalesFilter,
+    TopProductItem,
 )
 
-DIAS_POR_DEFECTO = 30
+DEFAULT_DAYS = 30
 
 
-def _validar_rango(filtro: VentasFiltro) -> None:
-    if filtro.fecha_inicio and filtro.fecha_fin and filtro.fecha_inicio > filtro.fecha_fin:
-        raise RangoFechasInvalidoError()
+def _validate_date_range(filter_params: SalesFilter) -> None:
+    if (
+        filter_params.start_date
+        and filter_params.end_date
+        and filter_params.start_date > filter_params.end_date
+    ):
+        raise InvalidDateRangeError()
 
 
-def _aplicar_filtros_base(query, filtro: VentasFiltro):
-    """Solo ventas reales: no canceladas, no eliminadas."""
+def _apply_base_filters(query: Select, filter_params: SalesFilter) -> Select:
+    """Only real sales: not cancelled, not soft-deleted."""
     query = query.where(
-        VentaTicket.deleted_at.is_(None),
-        VentaTicket.esta_cancelado == 0,
+        SaleTicket.deleted_at.is_(None),
+        SaleTicket.is_cancelled == 0,
     )
-    if filtro.branch_id:
-        query = query.where(VentaTicket.branch_id == filtro.branch_id)
+    if filter_params.branch_id:
+        query = query.where(SaleTicket.branch_id == filter_params.branch_id)
     return query
 
 
-def _aplicar_rango_fechas(query, fecha_inicio: date, fecha_fin: date):
-    limite = (fecha_fin + timedelta(days=1)).isoformat()
+def _apply_date_range(
+    query: Select, start_date: date, end_date: date
+) -> Select:
+    # Se usa < (día siguiente) en lugar de <= para cubrir todo el último día
+    upper_bound = (end_date + timedelta(days=1)).isoformat()
     return query.where(
-        VentaTicket.vendido_en >= fecha_inicio.isoformat(),
-        VentaTicket.vendido_en < limite,
+        SaleTicket.sold_at >= start_date.isoformat(),
+        SaleTicket.sold_at < upper_bound,
     )
 
 
-def _aplicar_fechas_opcionales(query, filtro: VentasFiltro):
-    if filtro.fecha_inicio:
+def _apply_optional_dates(
+    query: Select, filter_params: SalesFilter
+) -> Select:
+    if filter_params.start_date:
         query = query.where(
-            VentaTicket.vendido_en >= filtro.fecha_inicio.isoformat())
-    if filtro.fecha_fin:
-        limite = (filtro.fecha_fin + timedelta(days=1)).isoformat()
-        query = query.where(VentaTicket.vendido_en < limite)
+            SaleTicket.sold_at >= filter_params.start_date.isoformat()
+        )
+    if filter_params.end_date:
+        upper_bound = (
+            filter_params.end_date + timedelta(days=1)
+        ).isoformat()
+        query = query.where(SaleTicket.sold_at < upper_bound)
     return query
 
 
-# ---------- 1. Gráfica de líneas: ventas y ganancias diarias ----------
+# ---------- 1. Line chart: daily sales & profit ----------
 
-async def get_ventas_diarias(db: AsyncSession, filtro: VentasFiltro) -> list[VentaDiariaItem]:
-    """Serie diaria de ventas y ganancias. Si no se especifican fechas,
-    regresa los últimos 30 días (incluye hoy)."""
-    _validar_rango(filtro)
+async def get_daily_sales(
+    db: AsyncSession, filter_params: SalesFilter
+) -> list[DailySaleItem]:
+    """Daily time-series of sales totals and profit.
 
-    fecha_fin = filtro.fecha_fin or date.today()
-    fecha_inicio = filtro.fecha_inicio or (
-        fecha_fin - timedelta(days=DIAS_POR_DEFECTO - 1))
+    Defaults to the last 30 days (including today) when no dates are given.
+    """
+    _validate_date_range(filter_params)
 
-    dia_expr = func.substr(VentaTicket.vendido_en, 1, 10)  # 'YYYY-MM-DD'
+    end_date = filter_params.end_date or date.today()
+    start_date = filter_params.start_date or (
+        end_date - timedelta(days=DEFAULT_DAYS - 1)
+    )
+
+    day_expr = func.substr(SaleTicket.sold_at, 1, 10)  # 'YYYY-MM-DD'
 
     query = select(
-        dia_expr.label("dia"),
-        func.coalesce(func.sum(VentaTicket.total), 0),
-        func.coalesce(func.sum(VentaTicket.ganancia), 0),
+        day_expr.label("day"),
+        func.coalesce(func.sum(SaleTicket.total), 0),
+        func.coalesce(func.sum(SaleTicket.profit), 0),
     )
-    query = _aplicar_filtros_base(query, filtro)
-    query = _aplicar_rango_fechas(query, fecha_inicio, fecha_fin)
-    query = query.group_by(dia_expr).order_by(dia_expr)
+    query = _apply_base_filters(query, filter_params)
+    query = _apply_date_range(query, start_date, end_date)
+    query = query.group_by(day_expr).order_by(day_expr)
 
     result = await db.execute(query)
-    datos = {
-        dia: (total, ganancia)
-        for dia, total, ganancia in result.all()
+    data = {
+        day: (total, profit)
+        for day, total, profit in result.all()
     }
 
     # Se rellenan los días sin ventas con 0 para que la gráfica no tenga huecos
-    serie: list[VentaDiariaItem] = []
-    cursor = fecha_inicio
-    while cursor <= fecha_fin:
-        clave = cursor.isoformat()
-        total, ganancia = datos.get(clave, (0, 0))
-        serie.append(VentaDiariaItem(
-            fecha=clave, total_ventas=total, ganancia_total=ganancia))
+    series: list[DailySaleItem] = []
+    cursor = start_date
+    while cursor <= end_date:
+        key = cursor.isoformat()
+        total, profit = data.get(key, (0, 0))
+        series.append(
+            DailySaleItem(date=key, total_sales=total, total_profit=profit)
+        )
         cursor += timedelta(days=1)
 
-    return serie
+    return series
 
 
-# ---------- 2. Donut: formas de pago ----------
+# ---------- 2. Donut chart: payment methods ----------
 
-async def get_formas_pago(db: AsyncSession, filtro: VentasFiltro) -> list[FormaPagoItem]:
-    _validar_rango(filtro)
+async def get_payment_methods(
+    db: AsyncSession, filter_params: SalesFilter
+) -> list[PaymentMethodItem]:
+    _validate_date_range(filter_params)
 
     query = select(
-        VentaTicket.forma_pago,
-        func.coalesce(func.sum(VentaTicket.total), 0),
-        func.count(VentaTicket.uuid),
+        SaleTicket.payment_method,
+        func.coalesce(func.sum(SaleTicket.total), 0),
+        func.count(SaleTicket.uuid),
     )
-    query = _aplicar_filtros_base(query, filtro)
-    query = _aplicar_fechas_opcionales(query, filtro)
-    query = query.group_by(VentaTicket.forma_pago)
+    query = _apply_base_filters(query, filter_params)
+    query = _apply_optional_dates(query, filter_params)
+    query = query.group_by(SaleTicket.payment_method)
 
     result = await db.execute(query)
     return [
-        FormaPagoItem(forma_pago=forma_pago, total=total,
-                      numero_tickets=numero_tickets)
-        for forma_pago, total, numero_tickets in result.all()
+        PaymentMethodItem(
+            payment_method=method, total=total, ticket_count=count
+        )
+        for method, total, count in result.all()
     ]
 
 
-# ---------- 3. Tabla: últimos tickets ----------
+# ---------- 3. Table: recent tickets ----------
 
-async def get_ultimos_tickets(
-    db: AsyncSession, filtro: VentasFiltro, limit: int = 10
-) -> list[TicketRecienteItem]:
+async def get_recent_tickets(
+    db: AsyncSession, filter_params: SalesFilter, limit: int = 10
+) -> list[RecentTicketItem]:
     query = select(
-        VentaTicket.folio,
-        VentaTicket.total,
-        VentaTicket.forma_pago,
-        VentaTicket.vendido_en,
+        SaleTicket.folio,
+        SaleTicket.total,
+        SaleTicket.payment_method,
+        SaleTicket.sold_at,
     )
-    query = _aplicar_filtros_base(query, filtro)
-    query = query.order_by(VentaTicket.vendido_en.desc()).limit(limit)
+    query = _apply_base_filters(query, filter_params)
+    query = query.order_by(SaleTicket.sold_at.desc()).limit(limit)
 
     result = await db.execute(query)
     return [
-        TicketRecienteItem(folio=folio, total=total,
-                           forma_pago=forma_pago, vendido_en=vendido_en)
-        for folio, total, forma_pago, vendido_en in result.all()
+        RecentTicketItem(
+            folio=folio, total=total, payment_method=method, sold_at=sold_at
+        )
+        for folio, total, method, sold_at in result.all()
     ]
 
 
-# ---------- 4. Tabla: productos más vendidos ----------
+# ---------- 4. Table: top-selling products ----------
 
-async def get_productos_mas_vendidos(
-    db: AsyncSession, filtro: VentasFiltro, limit: int = 10
-) -> list[ProductoMasVendidoItem]:
-    _validar_rango(filtro)
+async def get_top_products(
+    db: AsyncSession, filter_params: SalesFilter, limit: int = 10
+) -> list[TopProductItem]:
+    _validate_date_range(filter_params)
 
     query = (
         select(
-            VentaTicketArticulo.producto_codigo,
-            VentaTicketArticulo.producto_nombre,
-            func.coalesce(func.sum(VentaTicketArticulo.cantidad), 0),
+            SaleTicketItem.product_code,
+            SaleTicketItem.product_name,
+            func.coalesce(func.sum(SaleTicketItem.quantity), 0),
             func.coalesce(
-                func.sum(VentaTicketArticulo.cantidad *
-                         VentaTicketArticulo.precio_usado), 0
+                func.sum(
+                    SaleTicketItem.quantity * SaleTicketItem.unit_price
+                ),
+                0,
             ),
         )
-        .join(VentaTicket, VentaTicket.uuid == VentaTicketArticulo.ticket_uuid)
-        .where(VentaTicketArticulo.deleted_at.is_(None))
+        .join(SaleTicket, SaleTicket.uuid == SaleTicketItem.ticket_uuid)
+        .where(SaleTicketItem.deleted_at.is_(None))
     )
-    query = _aplicar_filtros_base(query, filtro)
-    query = _aplicar_fechas_opcionales(query, filtro)
+    query = _apply_base_filters(query, filter_params)
+    query = _apply_optional_dates(query, filter_params)
 
     query = (
         query.group_by(
-            VentaTicketArticulo.producto_codigo, VentaTicketArticulo.producto_nombre
+            SaleTicketItem.product_code, SaleTicketItem.product_name
         )
-        .order_by(func.sum(VentaTicketArticulo.cantidad).desc())
+        .order_by(func.sum(SaleTicketItem.quantity).desc())
         .limit(limit)
     )
 
     result = await db.execute(query)
     return [
-        ProductoMasVendidoItem(
-            producto_codigo=codigo,
-            producto_nombre=nombre,
-            cantidad_vendida=cantidad,
-            total_vendido=total,
+        TopProductItem(
+            product_code=code,
+            product_name=name,
+            quantity_sold=qty,
+            total_sold=total,
         )
-        for codigo, nombre, cantidad, total in result.all()
+        for code, name, qty, total in result.all()
     ]

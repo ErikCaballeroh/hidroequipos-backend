@@ -1,41 +1,44 @@
 from fastapi import APIRouter, Query
 
-from app.users.dependencies import DbSession
 from app.sales import service
-from app.sales.dependencies import Filtro
+from app.sales.dependencies import DbSession, SalesFilterDep
 from app.sales.schemas import (
-    FormaPagoItem,
-    ProductoMasVendidoItem,
-    TicketRecienteItem,
-    VentaDiariaItem,
+    DailySaleItem,
+    PaymentMethodItem,
+    RecentTicketItem,
+    TopProductItem,
 )
 
 router = APIRouter()
 
 
-# 1. Gráfica de líneas: ventas diarias + ganancias diarias
-@router.get("/daily-sales", response_model=list[VentaDiariaItem])
-async def ventas_diarias(db: DbSession, filtro: Filtro):
-    return await service.get_ventas_diarias(db, filtro)
+# 1. Line chart: daily sales + profit
+@router.get("/daily-sales", response_model=list[DailySaleItem])
+async def get_daily_sales(db: DbSession, filter_params: SalesFilterDep):
+    return await service.get_daily_sales(db, filter_params)
 
 
-# 2. Donut: formas de pago
-@router.get("/payment-methods", response_model=list[FormaPagoItem])
-async def formas_pago(db: DbSession, filtro: Filtro):
-    return await service.get_formas_pago(db, filtro)
+# 2. Donut chart: payment methods
+@router.get("/payment-methods", response_model=list[PaymentMethodItem])
+async def get_payment_methods(db: DbSession, filter_params: SalesFilterDep):
+    return await service.get_payment_methods(db, filter_params)
 
 
-# 3. Tabla: últimos tickets
-@router.get("/recent-tickets", response_model=list[TicketRecienteItem])
-async def ultimos_tickets(
-    db: DbSession, filtro: Filtro, limit: int = Query(10, ge=1, le=100)
+# 3. Table: recent tickets
+@router.get("/recent-tickets", response_model=list[RecentTicketItem])
+async def get_recent_tickets(
+    db: DbSession,
+    filter_params: SalesFilterDep,
+    limit: int = Query(10, ge=1, le=100),
 ):
-    return await service.get_ultimos_tickets(db, filtro, limit)
+    return await service.get_recent_tickets(db, filter_params, limit)
 
 
-# 4. Tabla: productos más vendidos
-@router.get("/top-products", response_model=list[ProductoMasVendidoItem])
-async def productos_mas_vendidos(
-    db: DbSession, filtro: Filtro, limit: int = Query(10, ge=1, le=100)
+# 4. Table: top-selling products
+@router.get("/top-products", response_model=list[TopProductItem])
+async def get_top_products(
+    db: DbSession,
+    filter_params: SalesFilterDep,
+    limit: int = Query(10, ge=1, le=100),
 ):
-    return await service.get_productos_mas_vendidos(db, filtro, limit)
+    return await service.get_top_products(db, filter_params, limit)

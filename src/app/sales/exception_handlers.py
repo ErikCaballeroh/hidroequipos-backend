@@ -1,10 +1,12 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.sales.exceptions import RangoFechasInvalidoError
+from app.sales.exceptions import InvalidDateRangeError
 
 
-def register_ventas_exception_handlers(app: FastAPI) -> None:
-    @app.exception_handler(RangoFechasInvalidoError)
-    async def rango_fechas_invalido_handler(request: Request, exc: RangoFechasInvalidoError):
+def register_sales_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(InvalidDateRangeError)
+    async def invalid_date_range_handler(
+        request: Request, exc: InvalidDateRangeError
+    ):
         return JSONResponse(status_code=400, content={"detail": str(exc)})
