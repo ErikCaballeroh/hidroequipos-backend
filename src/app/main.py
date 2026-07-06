@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.core.exception_handlers import register_generic_exception_handler
 from app.users.exception_handlers import register_user_exception_handlers
 from app.users.router import router as users_router
+from app.sales.router import router as sales_router
 
 app = FastAPI(title="Hidroequipos")
 
@@ -26,3 +27,4 @@ def root():
 
 
 app.include_router(users_router, prefix="/api/v1/users", tags=["usuarios"])
+app.include_router(sales_router, prefix="/api/v1/sales", tags=["ventas"])
