@@ -1,0 +1,27 @@
+from typing import Annotated
+
+from fastapi import Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.users.dependencies import CurrentUser
+from app.stock.schemas import StockFilter
+
+DbSession = Annotated[AsyncSession, Depends(get_db)]
+
+
+async def build_filter(
+    current_user: CurrentUser,
+    branch_id: str | None = Query(
+        None,
+        description="Only applies if the user is admin; otherwise their own branch is used",
+    ),
+) -> StockFilter:
+    # Un usuario no-admin solo puede ver estadísticas de su propia sucursal
+    resolved_branch = (
+        branch_id if current_user.rol == "admin" else current_user.branch_id
+    )
+    return StockFilter(branch_id=resolved_branch)
+
+
+StockFilterDep = Annotated[StockFilter, Depends(build_filter)]

@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
     )
+    resend_api_key: str | None = None
+    resend_from_email: str = "inventario@tu-dominio.com"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -17,7 +17,14 @@ Backend en FastAPI para gestionar usuarios sobre Postgres/Supabase. La API usa J
 4. Instala dependencias con `uv sync`.
 5. Levanta la aplicación con `uv run fastapi dev src/app/main.py`.
 
-## Variables de entorno
+### Variables de Entorno
+
+Copia el archivo `.env.example` a un nuevo archivo llamado `.env` en la raíz de `backend` y ajusta los valores necesarios:
+- `JWT_SECRET_KEY`: Llave para encriptar los tokens.
+- `DATABASE_URL`: Cadena de conexión para PostgreSQL usando asyncpg.
+- `RESEND_API_KEY`: API Key de Resend (necesario para el envío de correos en el módulo de Inventario/Restock).
+
+### Instalación usando `uv`
 
 La aplicación lee la configuración desde `.env`. Estas son las variables usadas por el backend:
 
