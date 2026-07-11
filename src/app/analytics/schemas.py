@@ -77,3 +77,28 @@ class AccountsReceivableItem(BaseModel):
     charges: float                 # cargos a crédito acumulados
     payments: float                # abonos acumulados
     balance: float                 # charges - payments
+
+
+# ---------- Tema 3: Estacionalidad temporal ----------
+
+class SalesHeatmapItem(BaseModel):
+    """Celda del mapa de calor día-de-semana × hora."""
+
+    weekday: int                   # 0=Lunes .. 6=Domingo
+    hour: int                      # 0..23
+    total: float
+    ticket_count: int
+
+
+class SalesByMonthItem(BaseModel):
+    """Ventas agregadas por mes del año (estacionalidad, cruza años)."""
+
+    month: int                     # 1..12
+    total: float
+    ticket_count: int
+
+
+class SalesByWeekdayItem(BaseModel):
+    weekday: int                   # 0=Lunes .. 6=Domingo
+    total: float
+    ticket_count: int

@@ -4,7 +4,7 @@ Se reutilizan los helpers de filtrado de ventas para mantener las mismas reglas
 (excluir cancelados y borrados, aplicar rango de fechas y sucursal).
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,9 @@ from app.analytics.schemas import (
     MarginSummary,
     MarginTrendItem,
     ProfitByDepartmentItem,
+    SalesByMonthItem,
+    SalesByWeekdayItem,
+    SalesHeatmapItem,
     TopCustomerItem,
     TopProfitableProductItem,
 )
@@ -383,14 +386,14 @@ async def get_accounts_receivable(
 
     items = []
     for uuid in customer_uuids:
-        name, limit = clients.get(uuid, ("Cliente sin nombre", 0))
+        name, credit_limit = clients.get(uuid, ("Cliente sin nombre", 0))
         charge = float(charges.get(uuid, 0))
         payment = float(payments.get(uuid, 0))
         items.append(
             AccountsReceivableItem(
                 customer_uuid=uuid,
                 customer_name=name,
-                credit_limit=limit,
+                credit_limit=credit_limit,
                 charges=charge,
                 payments=payment,
                 balance=charge - payment,
@@ -400,3 +403,121 @@ async def get_accounts_receivable(
     # Mayor saldo pendiente primero.
     items.sort(key=lambda x: x.balance, reverse=True)
     return items[:limit]
+
+
+# ---------- Tema 3: Estacionalidad temporal ----------
+
+async def _daily_hour_rows(
+    db: AsyncSession, filter_params: SalesFilter
+) -> list[tuple[str, str, float, int]]:
+    """Ventas agrupadas por (día 'YYYY-MM-DD', hora 'HH').
+
+    El día de la semana se resuelve en Python para no depender de CAST de la BD,
+    igual que hace el módulo de ventas con las fechas en texto.
+    """
+    day_expr = func.substr(SaleTicket.sold_at, 1, 10)   # 'YYYY-MM-DD'
+    hour_expr = func.substr(SaleTicket.sold_at, 12, 2)  # 'HH'
+
+    query = select(
+        day_expr.label("day"),
+        hour_expr.label("hour"),
+        func.coalesce(func.sum(SaleTicket.total), 0),
+        func.count(SaleTicket.uuid),
+    )
+    query = _apply_base_filters(query, filter_params)
+    query = _apply_optional_dates(query, filter_params)
+    query = query.group_by(day_expr, hour_expr)
+
+    result = await db.execute(query)
+    return result.all()
+
+
+def _weekday_of(day: str) -> int | None:
+    """0=Lunes .. 6=Domingo; None si el texto no es una fecha ISO válida."""
+    try:
+        return date.fromisoformat(day).weekday()
+    except (ValueError, TypeError):
+        return None
+
+
+async def get_sales_heatmap(
+    db: AsyncSession, filter_params: SalesFilter
+) -> list[SalesHeatmapItem]:
+    """Mapa de calor de ventas por día de la semana × hora."""
+    _validate_date_range(filter_params)
+    rows = await _daily_hour_rows(db, filter_params)
+
+    # Acumulado por (weekday, hour).
+    acc: dict[tuple[int, int], list[float]] = {}
+    for day, hour, total, count in rows:
+        weekday = _weekday_of(day)
+        if weekday is None or hour is None:
+            continue
+        key = (weekday, int(hour))
+        bucket = acc.setdefault(key, [0.0, 0])
+        bucket[0] += float(total)
+        bucket[1] += int(count)
+
+    return [
+        SalesHeatmapItem(
+            weekday=weekday, hour=hour, total=vals[0], ticket_count=int(vals[1])
+        )
+        for (weekday, hour), vals in sorted(acc.items())
+    ]
+
+
+async def get_sales_by_weekday(
+    db: AsyncSession, filter_params: SalesFilter
+) -> list[SalesByWeekdayItem]:
+    """Ventas agregadas por día de la semana (Lun–Dom)."""
+    _validate_date_range(filter_params)
+    rows = await _daily_hour_rows(db, filter_params)
+
+    acc: dict[int, list[float]] = {}
+    for day, _hour, total, count in rows:
+        weekday = _weekday_of(day)
+        if weekday is None:
+            continue
+        bucket = acc.setdefault(weekday, [0.0, 0])
+        bucket[0] += float(total)
+        bucket[1] += int(count)
+
+    # Se devuelven los 7 días (0..6) aunque no haya ventas, para una gráfica completa.
+    return [
+        SalesByWeekdayItem(
+            weekday=wd,
+            total=acc.get(wd, [0.0, 0])[0],
+            ticket_count=int(acc.get(wd, [0.0, 0])[1]),
+        )
+        for wd in range(7)
+    ]
+
+
+async def get_sales_by_month(
+    db: AsyncSession, filter_params: SalesFilter
+) -> list[SalesByMonthItem]:
+    """Ventas agregadas por mes del año (estacionalidad; suma sobre años)."""
+    _validate_date_range(filter_params)
+
+    month_expr = func.substr(SaleTicket.sold_at, 6, 2)  # 'MM'
+    query = select(
+        month_expr.label("month"),
+        func.coalesce(func.sum(SaleTicket.total), 0),
+        func.count(SaleTicket.uuid),
+    )
+    query = _apply_base_filters(query, filter_params)
+    query = _apply_optional_dates(query, filter_params)
+    query = query.group_by(month_expr)
+
+    result = await db.execute(query)
+    data = {int(month): (total, count) for month, total, count in result.all()}
+
+    # Los 12 meses, rellenando con 0 los que no tienen ventas.
+    return [
+        SalesByMonthItem(
+            month=m,
+            total=data.get(m, (0, 0))[0],
+            ticket_count=int(data.get(m, (0, 0))[1]),
+        )
+        for m in range(1, 13)
+    ]

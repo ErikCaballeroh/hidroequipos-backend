@@ -9,6 +9,9 @@ from app.analytics.schemas import (
     MarginSummary,
     MarginTrendItem,
     ProfitByDepartmentItem,
+    SalesByMonthItem,
+    SalesByWeekdayItem,
+    SalesHeatmapItem,
     TopCustomerItem,
     TopProfitableProductItem,
 )
@@ -78,3 +81,23 @@ async def get_accounts_receivable(
     limit: int = Query(50, ge=1, le=200),
 ):
     return await service.get_accounts_receivable(db, filter_params, limit)
+
+
+# ==================== Tema 3: Estacionalidad temporal ====================
+
+# Mapa de calor día-de-semana × hora
+@router.get("/sales-heatmap", response_model=list[SalesHeatmapItem])
+async def get_sales_heatmap(db: DbSession, filter_params: AnalyticsFilterDep):
+    return await service.get_sales_heatmap(db, filter_params)
+
+
+# Ventas por mes del año (estacionalidad)
+@router.get("/sales-by-month", response_model=list[SalesByMonthItem])
+async def get_sales_by_month(db: DbSession, filter_params: AnalyticsFilterDep):
+    return await service.get_sales_by_month(db, filter_params)
+
+
+# Ventas por día de la semana
+@router.get("/sales-by-weekday", response_model=list[SalesByWeekdayItem])
+async def get_sales_by_weekday(db: DbSession, filter_params: AnalyticsFilterDep):
+    return await service.get_sales_by_weekday(db, filter_params)
