@@ -40,3 +40,40 @@ class TopProfitableProductItem(BaseModel):
     total_profit: float
     total_sold: float          # importe vendido (cantidad * precio)
     margin_pct: float
+
+
+# ---------- Tema 2: Clientes y crédito ----------
+
+class CustomerSummary(BaseModel):
+    """KPIs de clientes y crédito."""
+
+    active_customers: int          # clientes distintos con ventas en el período
+    avg_ticket_per_customer: float
+    receivable_balance: float      # saldo por cobrar acumulado (cargos crédito - abonos)
+    credit_sales_pct: float        # ventas a crédito / ventas totales (0..1)
+
+
+class TopCustomerItem(BaseModel):
+    customer_uuid: str
+    customer_name: str
+    total: float
+    ticket_count: int
+
+
+class CreditVsPaymentsItem(BaseModel):
+    """Serie mensual de cargos a crédito vs abonos recibidos."""
+
+    period: str                    # 'YYYY-MM'
+    credit_charges: float
+    payments: float
+
+
+class AccountsReceivableItem(BaseModel):
+    """Saldo por cobrar por cliente (acumulado a la fecha)."""
+
+    customer_uuid: str
+    customer_name: str
+    credit_limit: float
+    charges: float                 # cargos a crédito acumulados
+    payments: float                # abonos acumulados
+    balance: float                 # charges - payments
