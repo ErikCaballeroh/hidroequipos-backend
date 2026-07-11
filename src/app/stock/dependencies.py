@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated
 
 from fastapi import Depends, Query
@@ -16,12 +17,18 @@ async def build_filter(
         None,
         description="Only applies if the user is admin; otherwise their own branch is used",
     ),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
 ) -> StockFilter:
     # Un usuario no-admin solo puede ver estadísticas de su propia sucursal
     resolved_branch = (
         branch_id if current_user.rol == "admin" else current_user.branch_id
     )
-    return StockFilter(branch_id=resolved_branch)
+    return StockFilter(
+        branch_id=resolved_branch,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 StockFilterDep = Annotated[StockFilter, Depends(build_filter)]

@@ -9,6 +9,7 @@ from app.stock.exception_handlers import register_stock_exception_handlers
 from app.users.router import router as users_router
 from app.sales.router import router as sales_router
 from app.stock.router import router as stock_router
+from app.analytics.router import router as analytics_router
 
 app = FastAPI(title="Hidroequipos")
 
@@ -34,3 +35,4 @@ def root():
 app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
 app.include_router(sales_router, prefix="/api/v1/sales", tags=["sales"])
 app.include_router(stock_router, prefix="/api/v1/stock", tags=["stock"])
+app.include_router(analytics_router, prefix="/api/v1/analytics", tags=["analytics"])
