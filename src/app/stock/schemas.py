@@ -25,6 +25,10 @@ class RestockRequest(BaseModel):
     quantity: float
 
 
+class BulkRestockRequest(BaseModel):
+    items: list[RestockRequest]
+
+
 class StockFilter(BaseModel):
     """Query parameters to filter stock analytics endpoints."""
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from app.stock import service
 from app.stock.dependencies import DbSession, StockFilterDep
-from app.stock.schemas import InventoryItem, RestockRequest, InventoryStatusPoint, SuggestedOrdersSummary
+from app.stock.schemas import InventoryItem, RestockRequest, BulkRestockRequest, InventoryStatusPoint, SuggestedOrdersSummary
 from app.users.dependencies import CurrentUser
 
 router = APIRouter()
@@ -22,6 +22,15 @@ async def request_restock(
 ):
     return await service.request_restock(db, filter_params, current_user.uuid, request)
 
+
+@router.post("/restock/bulk")
+async def bulk_request_restock(
+    db: DbSession,
+    filter_params: StockFilterDep,
+    current_user: CurrentUser,
+    request: BulkRestockRequest,
+):
+    return await service.bulk_request_restock(db, filter_params, current_user.uuid, request)
 
 @router.post("/restock/{product_id}/receive")
 async def receive_restock(
