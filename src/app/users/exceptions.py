@@ -19,3 +19,8 @@ class BranchNotFoundError(Exception):
     def __init__(self, branch_id: str):
         self.branch_id = branch_id
         super().__init__(f"Sucursal {branch_id} no encontrada")
+
+
+class InvalidCurrentPasswordError(Exception):
+    def __init__(self):
+        super().__init__("La contraseña actual es incorrecta")

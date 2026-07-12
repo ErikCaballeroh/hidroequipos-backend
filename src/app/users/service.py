@@ -13,7 +13,7 @@ from app.users.exceptions import (
     UserNotFoundError,
 )
 from app.users.models import Usuario
-from app.users.schemas import LoginRequest, UserCreate, UserUpdate
+from app.users.schemas import LoginRequest, UserCreate, UserUpdate, UserUpdateMe
 
 
 def now_iso() -> str:
@@ -108,7 +108,7 @@ async def update_user(db: AsyncSession, user_uuid: str, data: UserUpdate) -> Usu
     if data.rol is not None:
         user.rol = data.rol
     if data.password is not None:
-        user.password_hash = hash_password(data.password)
+        user.password_hash = await hash_password(data.password)
 
     user.updated_at = now_iso()
 
@@ -134,5 +134,32 @@ async def soft_delete_user(db: AsyncSession, user_uuid: str) -> Usuario:
         await db.rollback()
         raise
 
+    await db.refresh(user)
+    return user
+
+
+async def update_me(db: AsyncSession, user: Usuario, data: UserUpdateMe) -> Usuario:
+    from app.users.exceptions import InvalidCurrentPasswordError
+    if not await verify_password(data.current_password, user.password_hash):
+        raise InvalidCurrentPasswordError()
+    
+    if data.nombre is not None:
+        user.nombre = data.nombre
+    if data.username is not None:
+        existing = await get_user_by_username(db, data.username)
+        if existing and existing.uuid != user.uuid:
+            raise UsernameAlreadyExistsError(data.username)
+        user.username = data.username
+    if data.new_password is not None:
+        user.password_hash = await hash_password(data.new_password)
+        
+    user.updated_at = now_iso()
+    
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise
+        
     await db.refresh(user)
     return user

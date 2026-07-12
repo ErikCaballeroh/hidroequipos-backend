@@ -6,6 +6,7 @@ from app.users.exceptions import (
     InvalidCredentialsError,
     UsernameAlreadyExistsError,
     UserNotFoundError,
+    InvalidCurrentPasswordError,
 )
 
 
@@ -25,3 +26,7 @@ def register_user_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(BranchNotFoundError)
     async def branch_not_found_handler(request: Request, exc: BranchNotFoundError):
         return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @app.exception_handler(InvalidCurrentPasswordError)
+    async def invalid_current_password_handler(request: Request, exc: InvalidCurrentPasswordError):
+        return JSONResponse(status_code=403, content={"detail": str(exc)})

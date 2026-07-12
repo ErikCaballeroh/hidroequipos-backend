@@ -319,19 +319,55 @@ async def get_inventory_status_history(
     products = (await db.execute(_active_products_query(filter_params))).all()
     rop_by_product = await _latest_rop_by_product(db, filter_params)
 
+    # 1. Baseline stock just before start_date
+    baseline_date = start_date - timedelta(days=1)
+    current_stock = await _stock_as_of(db, baseline_date, filter_params)
+    
+    # 2. Fetch all history from start_date to end_date
+    lower_bound = start_date.isoformat()
+    upper_bound = (end_date + timedelta(days=1)).isoformat()
+    
+    query = select(
+        InventoryHistory.producto_codigo,
+        InventoryHistory.fecha,
+        InventoryHistory.resultado
+    ).where(
+        InventoryHistory.deleted_at.is_(None),
+        InventoryHistory.fecha >= lower_bound,
+        InventoryHistory.fecha < upper_bound
+    ).order_by(InventoryHistory.fecha.asc())
+    
+    if filter_params.branch_id:
+        query = query.where(InventoryHistory.branch_id == filter_params.branch_id)
+        
+    history_result = await db.execute(query)
+    
+    # Group history by date (YYYY-MM-DD)
+    from collections import defaultdict
+    history_by_date = defaultdict(list)
+    for row in history_result.all():
+        codigo, fecha_str, resultado = row
+        day_str = fecha_str[:10] # ISO string YYYY-MM-DD
+        history_by_date[day_str].append((codigo, resultado))
+
     series: list[InventoryStatusPoint] = []
     cursor = start_date
     while cursor <= end_date:
-        stock_on_day = await _stock_as_of(db, cursor, filter_params)
+        day_str = cursor.isoformat()
+        
+        # Apply changes for this day
+        for codigo, resultado in history_by_date.get(day_str, []):
+            current_stock[codigo] = resultado
+            
         counts = {"critico": 0, "rop": 0, "optimo": 0}
         for codigo, _branch, inventario, inv_minimo in products:
-            stock = stock_on_day.get(codigo, inventario)
+            stock = current_stock.get(codigo, inventario) # fallback to current inventory if no history
             rop = rop_by_product.get(codigo, inv_minimo * ROP_FALLBACK_MULTIPLIER)
             counts[_classify(stock, inv_minimo, rop)] += 1
 
         series.append(
             InventoryStatusPoint(
-                date=cursor.isoformat(),
+                date=day_str,
                 critical_stock=counts["critico"],
                 reorder_point=counts["rop"],
                 optimal_stock=counts["optimo"],

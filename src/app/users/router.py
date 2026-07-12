@@ -2,7 +2,7 @@ from fastapi import APIRouter, Response, status
 
 from app.core.auth import authenticate_response, clear_access_cookie
 from app.users.dependencies import CurrentUser, DbSession
-from app.users.schemas import LoginRequest, LoginResponse, UserCreate, UserResponse, UserUpdate
+from app.users.schemas import LoginRequest, LoginResponse, UserCreate, UserResponse, UserUpdate, UserUpdateMe
 from app.users import service
 
 router = APIRouter()
@@ -28,6 +28,11 @@ async def logout(response: Response):
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: CurrentUser):
     return current_user
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me_route(data: UserUpdateMe, current_user: CurrentUser, db: DbSession):
+    return await service.update_me(db, current_user, data)
 
 
 @router.patch("/{user_uuid}", response_model=UserResponse)
