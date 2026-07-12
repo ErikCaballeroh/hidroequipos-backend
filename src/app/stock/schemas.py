@@ -29,6 +29,17 @@ class BulkRestockRequest(BaseModel):
     items: list[RestockRequest]
 
 
+class RestockConfigUpdate(BaseModel):
+    auto_restock_activo: bool
+
+
+class RestockConfigResponse(BaseModel):
+    branch_id: str
+    auto_restock_activo: bool
+    nivel_servicio: float
+    z_alpha: float
+
+
 class StockFilter(BaseModel):
     """Query parameters to filter stock analytics endpoints."""
 

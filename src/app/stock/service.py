@@ -6,7 +6,7 @@ from sqlalchemy import Select, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.stock.models import Product, Department, Supplier, BranchInventory, Order, InventoryHistory
+from app.stock.models import Product, Department, Supplier, BranchInventory, Order, InventoryHistory, RestockConfig
 from app.stock.schemas import (
     InventoryItem,
     RestockRequest,
@@ -14,6 +14,7 @@ from app.stock.schemas import (
     StockFilter,
     InventoryStatusPoint,
     SuggestedOrdersSummary,
+    RestockConfigUpdate,
 )
 from app.stock.exceptions import ProductNotFoundError, SupplierEmailNotFoundError
 from app.stock.templates import generate_restock_email, generate_bulk_restock_email
@@ -479,3 +480,68 @@ async def get_inventory_status_history(
         cursor += timedelta(days=1)
 
     return series
+
+
+# ---------- Configuración de Reabastecimiento ----------
+
+async def get_restock_config(db: AsyncSession, branch_id: str) -> RestockConfig:
+    query = select(RestockConfig).where(RestockConfig.branch_id == branch_id)
+    result = await db.execute(query)
+    config = result.scalars().first()
+    if not config:
+        # Create default config if not exists
+        config = RestockConfig(
+            branch_id=branch_id,
+            nivel_servicio=0.95,
+            z_alpha=1.65,
+            auto_restock_activo=0,
+            updated_at=datetime.now(timezone.utc).isoformat()
+        )
+        db.add(config)
+        await db.commit()
+        await db.refresh(config)
+    return config
+
+async def update_restock_config(db: AsyncSession, branch_id: str, request: RestockConfigUpdate) -> RestockConfig:
+    config = await get_restock_config(db, branch_id)
+    config.auto_restock_activo = 1 if request.auto_restock_activo else 0
+    config.updated_at = datetime.now(timezone.utc).isoformat()
+    await db.commit()
+    await db.refresh(config)
+    return config
+
+# ---------- Reabastecimiento Automático Diario ----------
+
+async def run_daily_restock_check(db: AsyncSession, branch_id: str):
+    """
+    Se ejecuta de forma programada para evaluar y lanzar el restock automático.
+    Utiliza los algoritmos de la pantalla de stock para determinar productos en estado
+    'Crítico' o 'Reordenar'.
+    """
+    config = await get_restock_config(db, branch_id)
+    if not config.auto_restock_activo:
+        return
+
+    # Usamos la lógica de get_inventory para saber qué necesita pedirse
+    items = await get_inventory(db, StockFilter(branch_id=branch_id))
+    
+    items_to_order = []
+    for item in items:
+        # Re-usamos la lógica de la pantalla que el usuario indicó:
+        # estado puede ser Crítico, Reordenar, etc.
+        # Si ya tiene pedido pendiente (En Camino), get_inventory lo excluye de Crítico/Reordenar.
+        if item.status in ["Crítico", "Reordenar"]:
+            # Cantidad a pedir, misma lógica del frontend
+            # Math.max(0, item.rop + item.ss - item.stock) || 1
+            qty = max(0.0, item.rop + item.ss - item.stock)
+            if qty == 0:
+                qty = 1.0
+                
+            items_to_order.append(RestockRequest(product_id=item.id, quantity=qty))
+
+    if not items_to_order:
+        return
+        
+    bulk_request = BulkRestockRequest(items=items_to_order)
+    # Se genera usando un usuario dummy del sistema o None si lo permite
+    await bulk_request_restock(db, StockFilter(branch_id=branch_id), user_uuid=None, request=bulk_request)

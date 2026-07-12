@@ -2,7 +2,15 @@ from fastapi import APIRouter
 
 from app.stock import service
 from app.stock.dependencies import DbSession, StockFilterDep
-from app.stock.schemas import InventoryItem, RestockRequest, BulkRestockRequest, InventoryStatusPoint, SuggestedOrdersSummary
+from app.stock.schemas import (
+    InventoryItem,
+    RestockRequest,
+    BulkRestockRequest,
+    InventoryStatusPoint,
+    SuggestedOrdersSummary,
+    RestockConfigUpdate,
+    RestockConfigResponse,
+)
 from app.users.dependencies import CurrentUser
 
 router = APIRouter()
@@ -50,3 +58,23 @@ async def get_suggested_orders(db: DbSession, filter_params: StockFilterDep):
 @router.get("/inventory-status", response_model=list[InventoryStatusPoint])
 async def get_inventory_status(db: DbSession, filter_params: StockFilterDep):
     return await service.get_inventory_status_history(db, filter_params)
+
+
+# 3. Configuración de reabastecimiento
+@router.get("/config", response_model=RestockConfigResponse)
+async def get_config(db: DbSession, filter_params: StockFilterDep):
+    if not filter_params.branch_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="branch_id is required")
+    return await service.get_restock_config(db, filter_params.branch_id)
+
+@router.put("/config", response_model=RestockConfigResponse)
+async def update_config(
+    db: DbSession,
+    filter_params: StockFilterDep,
+    request: RestockConfigUpdate
+):
+    if not filter_params.branch_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="branch_id is required")
+    return await service.update_restock_config(db, filter_params.branch_id, request)

@@ -11,7 +11,24 @@ from app.sales.router import router as sales_router
 from app.stock.router import router as stock_router
 from app.analytics.router import router as analytics_router
 
-app = FastAPI(title="Hidroequipos")
+import asyncio
+from contextlib import asynccontextmanager
+
+from app.core.scheduler import run_scheduler
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start the scheduler
+    scheduler_task = asyncio.create_task(run_scheduler())
+    yield
+    # Stop the scheduler
+    scheduler_task.cancel()
+    try:
+        await scheduler_task
+    except asyncio.CancelledError:
+        pass
+
+app = FastAPI(title="Hidroequipos", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

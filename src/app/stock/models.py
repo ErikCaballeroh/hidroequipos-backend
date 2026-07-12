@@ -69,6 +69,19 @@ class Supplier(Base):
     synced_at: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class RestockConfig(Base):
+    """Configuración de reabastecimiento por sucursal."""
+
+    __tablename__ = "config_reabastecimiento"
+    __table_args__ = {"schema": "public"}
+
+    branch_id: Mapped[str] = mapped_column(String, primary_key=True)
+    nivel_servicio: Mapped[float] = mapped_column(REAL, nullable=False, server_default=text("0.95"))
+    z_alpha: Mapped[float] = mapped_column(REAL, nullable=False, server_default=text("1.65"))
+    auto_restock_activo: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class BranchInventory(Base):
     """Stock actual por sucursal. PK compuesta (codigo, branch_id)."""
 
